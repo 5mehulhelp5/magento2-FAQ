@@ -25,15 +25,17 @@ $faqCollection = $block->getFaqCollection($group->getId());
                     data-faq-question
                 >
                     <span><?= $block->escapeHtml($faq->getTitle()); ?></span>
-                    <span class="faq-toggle" aria-hidden="true">+</span>
+                    <span class="faq-toggle" aria-hidden="true"></span>
                 </button>
                 <div
                     id="faq-answer-<?= $block->escapeHtmlAttr($itemKey); ?>"
                     class="faq-answer"
-                    style="display: none;"
+                    style="height: 0;"
                     data-faq-answer
                 >
-                    <?= /* @noEscape */ $block->filterOutputHtml($faq->getContent()); ?>
+                    <div class="faq-answer-content">
+                        <?= /* @noEscape */ $block->filterOutputHtml($faq->getContent()); ?>
+                    </div>
                 </div>
             </div>
         <?php endforeach; ?>

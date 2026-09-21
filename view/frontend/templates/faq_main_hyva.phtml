@@ -108,15 +108,17 @@ use Mageprince\Faq\Model\Config\DefaultConfig;
                                                 data-faq-question
                                             >
                                                 <span><?= $escaper->escapeHtml(__($faq->getTitle())) ?></span>
-                                                <span class="faq-toggle" aria-hidden="true">+</span>
+                                                <span class="faq-toggle" aria-hidden="true"></span>
                                             </button>
                                             <div
                                                 id="faq-answer-<?= $escaper->escapeHtmlAttr($itemKey); ?>"
                                                 class="faq-answer"
-                                                style="display: none;"
+                                                style="height: 0;"
                                                 data-faq-answer
                                             >
-                                                <?= /* @noEscape */ $block->filterOutputHtml($faq->getContent()); ?>
+                                                <div class="faq-answer-content">
+                                                    <?= /* @noEscape */ $block->filterOutputHtml($faq->getContent()); ?>
+                                                </div>
                                             </div>
                                         </div>
                                     <?php endforeach; ?>
@@ -145,15 +147,17 @@ use Mageprince\Faq\Model\Config\DefaultConfig;
                                         data-faq-question
                                     >
                                         <span><?= $escaper->escapeHtml(__($faq->getTitle())) ?></span>
-                                        <span class="faq-toggle" aria-hidden="true">+</span>
+                                        <span class="faq-toggle" aria-hidden="true"></span>
                                     </button>
                                     <div
                                         id="faq-answer-<?= $escaper->escapeHtmlAttr($itemKey); ?>"
                                         class="faq-answer"
-                                        style="display: none;"
+                                        style="height: 0;"
                                         data-faq-answer
                                     >
-                                        <?= /* @noEscape */ $block->filterOutputHtml($faq->getContent()); ?>
+                                        <div class="faq-answer-content">
+                                            <?= /* @noEscape */ $block->filterOutputHtml($faq->getContent()); ?>
+                                        </div>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
@@ -247,6 +251,7 @@ use Mageprince\Faq\Model\Config\DefaultConfig;
             }
 
             .mageprince-faq-hyva .faq-item {
+                --faq-duration: 500ms;
                 background: #fff;
                 border: 1px solid #ddd;
                 border-bottom-width: 0;
@@ -276,18 +281,39 @@ use Mageprince\Faq\Model\Config\DefaultConfig;
             }
 
             .mageprince-faq-hyva .faq-toggle {
+                border-bottom: 2px solid currentColor;
+                border-right: 2px solid currentColor;
+                box-sizing: border-box;
+                display: block;
                 flex: 0 0 auto;
-                font-size: 1.25rem;
-                line-height: 1;
+                height: .5rem;
+                transform: rotate(-45deg);
+                transition: transform var(--faq-duration) ease;
+                width: .5rem;
+            }
+
+            .mageprince-faq-hyva .faq-question[aria-expanded="true"] .faq-toggle {
+                transform: rotate(45deg);
             }
 
             .mageprince-faq-hyva .faq-answer {
                 color: #333;
+                overflow: hidden;
+                transition: height var(--faq-duration) ease;
+            }
+
+            .mageprince-faq-hyva .faq-answer-content {
                 padding: 1rem 1.5rem;
             }
 
-            .mageprince-faq-hyva .faq-answer > :last-child {
+            .mageprince-faq-hyva .faq-answer-content > :last-child {
                 margin-bottom: 0;
+            }
+
+            @media (prefers-reduced-motion: reduce) {
+                .mageprince-faq-hyva .faq-item {
+                    --faq-duration: 0ms;
+                }
             }
         </style>
 
@@ -298,6 +324,8 @@ use Mageprince\Faq\Model\Config\DefaultConfig;
                     loading: false,
                     pageType: config.pageType,
                     pageTypeScroll: config.pageTypeScroll,
+                    toggleDuration: 500,
+                    bulkDuration: 100,
                     handleClick(event) {
                         const question = event.target.closest('[data-faq-question]');
                         if (!question || !this.$root.contains(question)) {
@@ -313,22 +341,73 @@ use Mageprince\Faq\Model\Config\DefaultConfig;
                         }
 
                         const isOpen = question.getAttribute('aria-expanded') === 'true';
-                        this.setQuestionState(question, answer, !isOpen);
+                        this.setQuestionState(question, answer, !isOpen, this.toggleDuration);
                     },
-                    setQuestionState(question, answer, isOpen) {
-                        question.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-                        answer.style.display = isOpen ? '' : 'none';
-
-                        const toggle = question.querySelector('.faq-toggle');
-                        if (toggle) {
-                            toggle.textContent = isOpen ? '-' : '+';
+                    setQuestionState(question, answer, isOpen, duration) {
+                        if ((question.getAttribute('aria-expanded') === 'true') === isOpen) {
+                            return;
                         }
+
+                        const item = question.closest('.faq-item') || answer;
+                        const effectiveDuration = this.reducedMotion() ? 0 : duration;
+
+                        // Drives both the answer height and the chevron rotation.
+                        item.style.setProperty('--faq-duration', effectiveDuration + 'ms');
+                        question.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+
+                        if (isOpen) {
+                            this.openAnswer(answer, effectiveDuration);
+                        } else {
+                            this.closeAnswer(answer, effectiveDuration);
+                        }
+                    },
+                    openAnswer(answer, duration) {
+                        this.clearTimer(answer);
+                        if (!duration) {
+                            answer.style.height = 'auto';
+                            return;
+                        }
+
+                        // A closed or mid-animation answer already has an explicit
+                        // height, so transitioning to the measured content height
+                        // starts immediately.
+                        answer.style.height = answer.scrollHeight + 'px';
+
+                        // Release the fixed height afterwards so the answer can grow
+                        // with its content (lazy images, embedded widgets, resizes).
+                        answer.mageprinceFaqTimer = window.setTimeout(() => {
+                            answer.style.height = 'auto';
+                            answer.mageprinceFaqTimer = null;
+                        }, duration);
+                    },
+                    closeAnswer(answer, duration) {
+                        this.clearTimer(answer);
+                        if (!duration) {
+                            answer.style.height = '0';
+                            return;
+                        }
+
+                        // height:auto is not animatable, so pin the current height
+                        // and force a reflow before collapsing to zero.
+                        answer.style.height = answer.scrollHeight + 'px';
+                        void answer.offsetHeight;
+                        answer.style.height = '0';
+                    },
+                    clearTimer(answer) {
+                        if (answer.mageprinceFaqTimer) {
+                            window.clearTimeout(answer.mageprinceFaqTimer);
+                            answer.mageprinceFaqTimer = null;
+                        }
+                    },
+                    reducedMotion() {
+                        return typeof window.matchMedia === 'function'
+                            && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
                     },
                     collapseAll() {
                         this.$root.querySelectorAll('[data-faq-question][aria-controls]').forEach((question) => {
                             const answer = document.getElementById(question.getAttribute('aria-controls'));
                             if (answer) {
-                                this.setQuestionState(question, answer, false);
+                                this.setQuestionState(question, answer, false, this.bulkDuration);
                             }
                         });
                     },
@@ -336,7 +415,7 @@ use Mageprince\Faq\Model\Config\DefaultConfig;
                         this.$root.querySelectorAll('[data-faq-question][aria-controls]').forEach((question) => {
                             const answer = document.getElementById(question.getAttribute('aria-controls'));
                             if (answer) {
-                                this.setQuestionState(question, answer, true);
+                                this.setQuestionState(question, answer, true, this.bulkDuration);
                             }
                         });
                     },
